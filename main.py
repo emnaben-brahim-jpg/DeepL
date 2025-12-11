@@ -20,7 +20,7 @@ async def deepl_translate(request: Request):
 
     headers = {"Authorization": f"DeepL-Auth-Key {DEEPL_KEY}"}
 
-    # 1) Premier appel : on demande EN pour récupérer la langue détectée
+    # 1) Premier appel : EN (pour détecter la langue source)
     data_en = {
         "text": original_text,
         "target_lang": "EN",
@@ -38,19 +38,15 @@ async def deepl_translate(request: Request):
     detected = deepl_en["translations"][0]["detected_source_language"]  # ex: "FR", "EN", "DE", "JA"
     en_text = deepl_en["translations"][0]["text"]
 
-    # 2) Nouvelle logique :
-    # FR, JA, DE -> EN
-    # EN         -> JA
-    # autres     -> EN (par défaut)
-    translated_text = None
-    target_label = ""
+    # 2) Logique de traduction
+    message_text = ""
 
-    if detected in ("FR", "JA", "DE"):
-        # on garde la traduction anglaise
-        translated_text = en_text
-        target_label = f"🇬🇧 *Translated to English* (detected: {detected})"
+    # 🇫🇷, 🇯🇵 -> 🇬🇧
+    if detected in ("FR", "JA"):
+        message_text = f"🇬🇧 *Translated to English* (detected: {detected})\n{en_text}"
+
+    # 🇬🇧 -> 🇯🇵
     elif detected == "EN":
-        # on traduit vers le japonais
         data_ja = {
             "text": original_text,
             "target_lang": "JA",
@@ -64,19 +60,41 @@ async def deepl_translate(request: Request):
             })
             return JSONResponse({"status": "error"})
 
-        translated_text = deepl_ja["translations"][0]["text"]
-        target_label = "🇯🇵 *Translated to Japanese* (detected: EN)"
-    else:
-        # fallback
-        translated_text = en_text
-        target_label = f"🇬🇧 *Translated to English (default for {detected})*"
+        ja_text = deepl_ja["translations"][0]["text"]
+        message_text = f"🇯🇵 *Translated to Japanese* (detected: EN)\n{ja_text}"
 
-    # 3) Envoi à Slack
-    message = {
+    # 🇩🇪 -> 🇬🇧 + 🇯🇵
+    elif detected == "DE":
+        # EN version already computed: en_text
+        message_text = f"🇬🇧 *To English*:\n{en_text}\n\n"
+
+        # then Japanese
+        data_ja = {
+            "text": original_text,
+            "target_lang": "JA",
+        }
+        deepl_ja = requests.post(DEEPL_URL, headers=headers, data=data_ja).json()
+
+        if "translations" not in deepl_ja:
+            requests.post(response_url, json={
+                "response_type": "ephemeral",
+                "text": f"❌ DeepL error (JA): {deepl_ja}"
+            })
+            return JSONResponse({"status": "error"})
+
+        ja_text = deepl_ja["translations"][0]["text"]
+        message_text += f"🇯🇵 *To Japanese*:\n{ja_text}"
+
+    # autres langues -> EN
+    else:
+        message_text = f"🇬🇧 *Translated to English* (detected: {detected})\n{en_text}"
+
+    # 3) Slack response
+    response_message = {
         "response_type": "ephemeral",
-        "text": f"{target_label}\n{translated_text}"
+        "text": message_text
     }
 
-    requests.post(response_url, json=message)
+    requests.post(response_url, json=response_message)
 
     return JSONResponse({"status": "ok"})
