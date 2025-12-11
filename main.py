@@ -38,19 +38,19 @@ async def deepl_translate(request: Request):
     detected = deepl_en["translations"][0]["detected_source_language"]  # ex: "FR", "EN", "DE", "JA"
     en_text = deepl_en["translations"][0]["text"]
 
-    # 2) Décision en fonction de la langue détectée
-    # FR ou JA  -> on garde l'anglais
-    # EN ou DE  -> on traduit vers le japonais
-    target_lang = None
+    # 2) Nouvelle logique :
+    # FR, JA, DE -> EN
+    # EN         -> JA
+    # autres     -> EN (par défaut)
     translated_text = None
     target_label = ""
 
-    if detected in ("FR", "JA"):
-        target_lang = "EN"
+    if detected in ("FR", "JA", "DE"):
+        # on garde la traduction anglaise
         translated_text = en_text
-        target_label = "🇬🇧 *Translated to English*"
-    elif detected in ("EN", "DE"):
-        # 2e appel : on veut du japonais
+        target_label = f"🇬🇧 *Translated to English* (detected: {detected})"
+    elif detected == "EN":
+        # on traduit vers le japonais
         data_ja = {
             "text": original_text,
             "target_lang": "JA",
@@ -65,26 +65,18 @@ async def deepl_translate(request: Request):
             return JSONResponse({"status": "error"})
 
         translated_text = deepl_ja["translations"][0]["text"]
-        target_lang = "JA"
-        target_label = "🇯🇵 *Translated to Japanese*"
+        target_label = "🇯🇵 *Translated to Japanese* (detected: EN)"
     else:
-        # Cas par défaut : on garde l'anglais
-        target_lang = "EN"
+        # fallback
         translated_text = en_text
         target_label = f"🇬🇧 *Translated to English (default for {detected})*"
 
     # 3) Envoi à Slack
     message = {
         "response_type": "ephemeral",
-        "text": f"{target_label}\n_(detected: {detected})_\n{translated_text}"
+        "text": f"{target_label}\n{translated_text}"
     }
 
     requests.post(response_url, json=message)
 
     return JSONResponse({"status": "ok"})
-
-
-@app.get("/")
-def home():
-    return {"status": "ok", "message": "DeepL Slack translator running"}
-
