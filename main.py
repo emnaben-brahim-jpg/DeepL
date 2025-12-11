@@ -11,34 +11,46 @@ DEEPL_URL = "https://api-free.deepl.com/v2/translate"
 
 @app.post("/slack/deepl")
 async def deepl_translate(request: Request):
+
     form = await request.form()
     payload = json.loads(form["payload"])
 
     original_text = payload["message"]["text"]
     response_url = payload["response_url"]
 
+    # ======= Traduction -> toujours en anglais =======
     headers = {"Authorization": f"DeepL-Auth-Key {DEEPL_KEY}"}
-    data = {"text": original_text, "target_lang": "EN"}
+    data = {
+        "text": original_text,
+        "target_lang": "EN"   # <- Toujours en anglais 🇬🇧
+    }
 
     deepl_result = requests.post(DEEPL_URL, headers=headers, data=data).json()
 
+    # En cas d’erreur DeepL
     if "translations" not in deepl_result:
-        requests.post(response_url, json={
+        message = {
             "response_type": "ephemeral",
-            "text": f"❌ Erreur DeepL : {deepl_result}"
-        })
+            "text": f"❌ DeepL Error: {deepl_result}"
+        }
+        requests.post(response_url, json=message)
         return JSONResponse({"status": "error"})
 
     translated_text = deepl_result["translations"][0]["text"]
 
-    requests.post(response_url, json={
+    # ======= Réponse Slack =======
+    message = {
         "response_type": "ephemeral",
-        "text": f"🟦 *Traduction DeepL :*\n{translated_text}"
-    })
+        "text": f"🇬🇧 *Translated to English:*\n{translated_text}"
+    }
+
+    requests.post(response_url, json=message)
 
     return JSONResponse({"status": "ok"})
 
 
+# Optional: route de test Render
 @app.get("/")
 def home():
-    return {"status": "ok", "message": "DeepL Slack API is running!"}
+    return {"status": "ok", "message": "DeepL Slack translator running"}
+
