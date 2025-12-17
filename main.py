@@ -46,14 +46,11 @@ async def deepl_translate_selected(request: Request):
     form = await request.form()
     payload = json.loads(form["payload"])
 
-    # Langue choisie dans le menu
+    # Langue choisie
     target_lang = payload["actions"][0]["selected_option"]["value"]
 
-    # Texte original (vient du message Slack)
+    # Texte original (Slack le met généralement ici)
     original_text = payload["message"]["text"]
-
-    # Où répondre
-    response_url = payload.get("response_url")  # parfois absent selon le type d'interaction
 
     headers = {"Authorization": f"DeepL-Auth-Key {DEEPL_KEY}"}
     data = {"text": original_text, "target_lang": target_lang}
@@ -61,18 +58,16 @@ async def deepl_translate_selected(request: Request):
     deepl_result = requests.post(DEEPL_URL, headers=headers, data=data).json()
 
     if "translations" not in deepl_result:
-        err = {"response_type": "ephemeral", "text": f"❌ DeepL error: {deepl_result}"}
-        if response_url:
-            requests.post(response_url, json=err)
-        return JSONResponse({"status": "error"})
+        # IMPORTANT: on renvoie l'erreur directement à Slack
+        return JSONResponse({
+            "response_type": "ephemeral",
+            "text": f"❌ DeepL error: {deepl_result}"
+        })
 
     translated_text = deepl_result["translations"][0]["text"]
 
-    msg = {"response_type": "ephemeral", "text": f"✅ *Translation ({target_lang}):*\n{translated_text}"}
-
-    # Si response_url existe, on l'utilise (simple)
-    if response_url:
-        requests.post(response_url, json=msg)
-
-    # IMPORTANT : toujours répondre 200 à Slack
-    return JSONResponse({"status": "ok"})
+    # IMPORTANT: renvoyer DIRECTEMENT la réponse à Slack
+    return JSONResponse({
+        "response_type": "ephemeral",
+        "text": f"✅ *Translation ({target_lang}):*\n{translated_text}"
+    })
