@@ -9,37 +9,43 @@ DEEPL_KEY = "336e1a1b-9df1-404b-b5dc-58c000424800:fx"
 DEEPL_URL = "https://api-free.deepl.com/v2/translate"
 
 
-@app.post("/slack/deepl")
-async def deepl_menu(request: Request):
+@app.post("/slack/language")
+async def deepl_translate_selected(request: Request):
     form = await request.form()
     payload = json.loads(form["payload"])
 
-    response_url = payload["response_url"]
+    # DEBUG utile dans les logs Render
+    print("INTERACTIVITY PAYLOAD TYPE:", payload.get("type"))
 
-    menu = {
+    # Langue choisie
+    target_lang = payload["actions"][0]["selected_option"]["value"]
+
+    # Texte original (Slack le fournit normalement ici)
+    original_text = payload.get("message", {}).get("text", "")
+
+    if not original_text:
+        return JSONResponse({
+            "response_type": "ephemeral",
+            "text": "❌ I couldn't read the original message text from Slack payload."
+        })
+
+    headers = {"Authorization": f"DeepL-Auth-Key {DEEPL_KEY}"}
+    data = {"text": original_text, "target_lang": target_lang}
+
+    deepl_result = requests.post(DEEPL_URL, headers=headers, data=data).json()
+
+    if "translations" not in deepl_result:
+        return JSONResponse({
+            "response_type": "ephemeral",
+            "text": f"❌ DeepL error: {deepl_result}"
+        })
+
+    translated_text = deepl_result["translations"][0]["text"]
+
+    return JSONResponse({
         "response_type": "ephemeral",
-        "text": "🌍 Choose the language to translate to:",
-        "blocks": [
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "*Select target language:*"},
-                "accessory": {
-                    "type": "static_select",
-                    "action_id": "select_language",
-                    "placeholder": {"type": "plain_text", "text": "Choose a language"},
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "English 🇬🇧"}, "value": "EN"},
-                        {"text": {"type": "plain_text", "text": "Japanese 🇯🇵"}, "value": "JA"},
-                        {"text": {"type": "plain_text", "text": "French 🇫🇷"}, "value": "FR"},
-                        {"text": {"type": "plain_text", "text": "German 🇩🇪"}, "value": "DE"},
-                    ],
-                },
-            }
-        ],
-    }
-
-    requests.post(response_url, json=menu)
-    return JSONResponse({"status": "menu_sent"})
+        "text": f"✅ *Translation ({target_lang}):*\n{translated_text}"
+    })
 
 @app.post("/slack/language")
 async def deepl_translate_selected(request: Request):
